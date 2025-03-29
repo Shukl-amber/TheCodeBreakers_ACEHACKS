@@ -3,22 +3,39 @@ import * as analyticsController from '../controllers/analyticsController.js';
 
 const router = express.Router();
 
-// Get restock recommendations
-router.get('/recommendations', analyticsController.getRestockRecommendations);
+/**
+ * @route   GET /api/analytics/inventory
+ * @desc    Get inventory analytics data
+ * @access  Private
+ */
+router.get('/inventory', analyticsController.getInventoryAnalytics);
 
-// Get sales trends
-router.get('/sales/trends', analyticsController.getSalesTrends);
+/**
+ * @route   GET /api/analytics/restock-recommendations
+ * @desc    Get AI-powered restock recommendations
+ * @access  Private
+ */
+router.get('/restock-recommendations', analyticsController.getRestockRecommendations);
 
-// Get top-selling products
-router.get('/sales/top-products', analyticsController.getTopSellingProducts);
+/**
+ * @route   POST /api/analytics/inventory-simulations
+ * @desc    Run inventory simulations with different scenarios
+ * @access  Private
+ */
+router.post('/inventory-simulations', analyticsController.runInventorySimulations);
 
-// Get slow-moving products
-router.get('/sales/slow-products', analyticsController.getSlowMovingProducts);
+/**
+ * @route   GET /api/analytics/sales-forecast
+ * @desc    Get sales forecast for a specific period
+ * @access  Private
+ */
+router.get('/sales-forecast', analyticsController.getSalesForecast);
 
-// Generate inventory health report
-router.get('/report/inventory-health', analyticsController.getInventoryHealthReport);
-
-// Generate sales performance report
-router.get('/report/sales-performance', analyticsController.getSalesPerformanceReport);
+/**
+ * @route   GET /api/analytics/sample-data
+ * @desc    Get sample data for development/testing
+ * @access  Private
+ */
+router.get('/sample-data', analyticsController.getSampleData);
 
 export default router;

@@ -6,10 +6,10 @@ dotenv.config();
 
 // Initialize the Shopify API
 const shopify = shopifyApi({
-  apiKey: process.env.SHOPIFY_API_KEY || 'dummy-key', // Required but won't be used with access token
-  apiSecretKey: process.env.SHOPIFY_API_SECRET || 'dummy-secret', // Required but won't be used with access token
+  apiKey: process.env.SHOPIFY_API_KEY, // Required but won't be used with access token
+  apiSecretKey: process.env.SHOPIFY_API_SECRET, // Required but won't be used with access token
   scopes: ['read_products', 'write_products', 'read_orders', 'write_orders', 'read_inventory', 'write_inventory'],
-  hostName: process.env.SHOPIFY_SHOP_NAME?.replace('.myshopify.com', '') || 'dummy-shop',
+  hostName: process.env.SHOPIFY_SHOP_NAME?.replace('.myshopify.com', ''),
   apiVersion: ApiVersion.October23,
   isEmbeddedApp: false
 });
