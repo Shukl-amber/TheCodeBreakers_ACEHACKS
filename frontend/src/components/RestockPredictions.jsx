@@ -68,7 +68,7 @@ const RestockPredictions = () => {
           icon: getProductIcon(item.category || item.productType || 'general'),
           stock: item.currentStock || 0,
           suggestion: formatSuggestion(item),
-          urgency: item.urgency || 'medium',
+          urgency: item.restockUrgency || 'medium',
           details: item
         }));
         

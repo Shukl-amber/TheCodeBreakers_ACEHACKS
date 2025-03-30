@@ -168,7 +168,7 @@ class PredictionEngine:
                     logger.info(f"DEBUG - Sample recommendation: {json.dumps(insights['restock_recommendations'][0] if insights['restock_recommendations'] else {}, indent=2)}")
                 
                 # Transform response to match the expected frontend structure exactly
-                self._validate_and_normalize_response(insights)
+                self._validate_and_normalize_response(insights, inventory_data)
                 
                 # Debug logging - Print normalized insights
                 logger.info(f"DEBUG - After normalization - Sample recommendation: {json.dumps(insights['restock_recommendations'][0] if insights['restock_recommendations'] else {}, indent=2)}")
@@ -191,13 +191,43 @@ class PredictionEngine:
             logger.error(f"Error calling Gemini API: {str(e)}")
             return self._generate_fallback_response()
 
-    def _validate_and_normalize_response(self, insights):
+    def _validate_and_normalize_response(self, insights, inventory_data=None):
         """
-        Validate and normalize the response to match frontend expectations
+        Validate and normalize the response to match frontend expectations,
+        ensuring stock data matches actual inventory values
         
         Args:
             insights (dict): The parsed insights from Gemini
+            inventory_data (dict/list): Original inventory data to get accurate stock levels
         """
+        # Create a lookup map for product IDs to their actual inventory quantities
+        actual_inventory = {}
+        
+        # Parse inventory data to build a lookup map of product ID to inventory quantity
+        if inventory_data:
+            if isinstance(inventory_data, list):
+                # For list format (from aiService._prepareInventoryData())
+                for item in inventory_data:
+                    if "id" in item and "quantity" in item:
+                        actual_inventory[item["id"]] = item["quantity"]
+                    elif "productId" in item and "quantity" in item:
+                        actual_inventory[item["productId"]] = item["quantity"]
+                    
+            elif isinstance(inventory_data, dict) and "products" in inventory_data:
+                # For Shopify raw format
+                for product in inventory_data["products"]:
+                    product_id = product.get("id", "")
+                    if "inventory_quantity" in product:
+                        actual_inventory[product_id] = product["inventory_quantity"]
+                    
+                    # Also handle variants
+                    for variant in product.get("variants", []):
+                        variant_id = variant.get("id", "")
+                        if "inventory_quantity" in variant:
+                            actual_inventory[variant_id] = variant["inventory_quantity"]
+        
+        logger.info(f"Built inventory lookup with {len(actual_inventory)} products/variants")
+        
         # Ensure required fields exist
         required_fields = [
             "inventoryHealth", "keyInsights", "actionItems",
@@ -235,7 +265,7 @@ class PredictionEngine:
                 }
             ]
             
-        # Ensure all restock recommendations have required fields
+        # Ensure all restock recommendations have required fields and accurate stock data
         for item in insights.get("restock_recommendations", []):
             # Convert field names to match frontend expectations if needed
             if "title" in item and "name" not in item:
@@ -249,7 +279,15 @@ class PredictionEngine:
                 
             if "urgency" in item and "restockUrgency" not in item:
                 item["restockUrgency"] = item["urgency"]
-                
+            
+            # Try to match the product ID with our inventory data
+            product_id = item.get("productId") or item.get("id", "")
+            
+            # Update currentStock with actual data if we have it
+            if product_id and product_id in actual_inventory:
+                logger.info(f"Updating stock for {product_id} from {item.get('currentStock', 0)} to {actual_inventory[product_id]}")
+                item["currentStock"] = actual_inventory[product_id]
+            
             # Ensure all required fields exist with defaults if missing
             required_item_fields = {
                 "productId": item.get("id", "") or "",
@@ -266,6 +304,13 @@ class PredictionEngine:
             for field, default_value in required_item_fields.items():
                 if field not in item:
                     item[field] = default_value
+                    
+        # Update lowStockItems with actual inventory data too
+        for item in insights.get("lowStockItems", []):
+            product_id = item.get("id", "")
+            if product_id and product_id in actual_inventory:
+                logger.info(f"Updating lowStockItems stock for {product_id} from {item.get('currentStock', 0)} to {actual_inventory[product_id]}")
+                item["currentStock"] = actual_inventory[product_id]
                     
         # Ensure there's at least one item in other arrays
         if not insights.get("lowStockItems") or len(insights["lowStockItems"]) == 0:
