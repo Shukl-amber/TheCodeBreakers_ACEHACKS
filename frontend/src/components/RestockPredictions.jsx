@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { getRestockRecommendations, runInventorySimulations, getShopifyProducts, testConnections, generateGeminiReport } from '../utils/api';
+import { 
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, 
+  ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area 
+} from 'recharts';
 
 const RestockPredictions = () => {
   const [recommendations, setRecommendations] = useState([]);
@@ -458,6 +462,215 @@ const RestockPredictions = () => {
             <strong>Generate Report:</strong> Create a comprehensive inventory report powered by Gemini AI that includes products sold, gross revenue, predicted sales, and restock recommendations in a well-formatted Markdown document.
           </p>
         </div>
+      </div>
+
+      {/* Performance Metrics */}
+      {renderPerformanceMetrics(recommendations)}
+
+      {/* Charts */}
+      {renderStockChart(recommendations)}
+      {renderSalesPredictionChart(recommendations)}
+      {renderUrgencyChart(recommendations)}
+      {renderCategoryDistribution(recommendations)}
+    </div>
+  );
+};
+
+// New chart data and helper functions
+const getChartData = (recommendations) => {
+  if (!recommendations || recommendations.length === 0) return [];
+  
+  return recommendations.map(item => ({
+    name: item.name.length > 10 ? item.name.substring(0, 10) + '...' : item.name,
+    stock: item.stock || 0,
+    recommended: item.details.recommendedOrderQuantity || 0,
+    sales: item.details.totalSold || 0,
+    predicted: item.details.predictedSales || 0,
+    revenue: item.details.revenue || 0,
+    fullName: item.name // For tooltip
+  }));
+};
+  
+const getCategoryData = (recommendations) => {
+  if (!recommendations || recommendations.length === 0) return [];
+  
+  const categories = {};
+  recommendations.forEach(item => {
+    const category = item.details.category || 'Other';
+    if (!categories[category]) {
+      categories[category] = { name: category, count: 0, stock: 0 };
+    }
+    categories[category].count++;
+    categories[category].stock += (item.stock || 0);
+  });
+  
+  return Object.values(categories);
+};
+  
+const getUrgencyData = (recommendations) => {
+  if (!recommendations || recommendations.length === 0) return [];
+  
+  const data = [
+    { name: 'High', value: 0 },
+    { name: 'Medium', value: 0 },
+    { name: 'Low', value: 0 }
+  ];
+  
+  recommendations.forEach(item => {
+    if (item.urgency === 'high') data[0].value++;
+    else if (item.urgency === 'medium') data[1].value++;
+    else data[2].value++;
+  });
+  
+  return data;
+};
+  
+const URGENCY_COLORS = ['#ef4444', '#f59e0b', '#10b981'];
+  
+// Chart components
+const renderStockChart = (recommendations) => {
+  const data = getChartData(recommendations);
+  if (data.length === 0) return null;
+  
+  return (
+    <div className="bg-white p-4 rounded-lg shadow-sm">
+      <h3 className="text-base font-semibold mb-3 text-gray-800">Current Stock vs. Recommended</h3>
+      <div style={{ height: 250 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" />
+            <YAxis />
+            <Tooltip 
+              formatter={(value, name) => [value, name === 'stock' ? 'Current Stock' : 'Recommended Order']}
+              labelFormatter={(value, payload) => payload && payload[0] ? payload[0].payload.fullName : value}
+            />
+            <Legend />
+            <Bar dataKey="stock" fill="#6366f1" name="Current Stock" />
+            <Bar dataKey="recommended" fill="#14b8a6" name="Recommended Order" />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+};
+  
+const renderSalesPredictionChart = (recommendations) => {
+  const data = getChartData(recommendations);
+  if (data.length === 0) return null;
+  
+  return (
+    <div className="bg-white p-4 rounded-lg shadow-sm">
+      <h3 className="text-base font-semibold mb-3 text-gray-800">Sales History & Predictions</h3>
+      <div style={{ height: 250 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" />
+            <YAxis />
+            <Tooltip 
+              formatter={(value, name) => [value, name === 'sales' ? 'Historical Sales' : 'Predicted Sales']}
+              labelFormatter={(value, payload) => payload && payload[0] ? payload[0].payload.fullName : value}
+            />
+            <Legend />
+            <Line type="monotone" dataKey="sales" stroke="#8b5cf6" name="Historical Sales" />
+            <Line type="monotone" dataKey="predicted" stroke="#f97316" name="Predicted Sales" strokeDasharray="5 5" />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+};
+  
+const renderUrgencyChart = (recommendations) => {
+  const data = getUrgencyData(recommendations);
+  if (data.every(item => item.value === 0)) return null;
+  
+  return (
+    <div className="bg-white p-4 rounded-lg shadow-sm">
+      <h3 className="text-base font-semibold mb-3 text-gray-800">Restock Urgency Distribution</h3>
+      <div style={{ height: 250 }} className="flex justify-center items-center">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={data}
+              cx="50%"
+              cy="50%"
+              innerRadius={60}
+              outerRadius={80}
+              fill="#8884d8"
+              paddingAngle={5}
+              dataKey="value"
+              label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+            >
+              {data.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={URGENCY_COLORS[index % URGENCY_COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip formatter={(value) => [`${value} items`, 'Count']} />
+            <Legend />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+};
+  
+const renderCategoryDistribution = (recommendations) => {
+  const data = getCategoryData(recommendations);
+  if (data.length === 0) return null;
+  
+  return (
+    <div className="bg-white p-4 rounded-lg shadow-sm">
+      <h3 className="text-base font-semibold mb-3 text-gray-800">Inventory by Category</h3>
+      <div style={{ height: 250 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            <Bar dataKey="stock" fill="#3b82f6" name="Stock Count" />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+};
+  
+const renderPerformanceMetrics = (recommendations) => {
+  if (!recommendations || recommendations.length === 0) return null;
+  
+  // Calculate some metrics
+  const totalStock = recommendations.reduce((acc, item) => acc + (item.stock || 0), 0);
+  const totalRecommended = recommendations.reduce((acc, item) => acc + (item.details.recommendedOrderQuantity || 0), 0);
+  const totalRevenue = recommendations.reduce((acc, item) => acc + (item.details.revenue || 0), 0);
+  const highUrgencyCount = recommendations.filter(item => item.urgency === 'high').length;
+  
+  // Metric card styles
+  const cardClass = "bg-white p-4 rounded-lg shadow-sm flex flex-col";
+  const valueClass = "text-2xl font-bold mt-2";
+  
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className={cardClass}>
+        <span className="text-gray-500 text-sm">Total Inventory</span>
+        <span className={valueClass}>{totalStock} <span className="text-sm font-normal">units</span></span>
+      </div>
+      <div className={cardClass}>
+        <span className="text-gray-500 text-sm">Recommended to Order</span>
+        <span className={`${valueClass} text-indigo-600`}>{totalRecommended} <span className="text-sm font-normal">units</span></span>
+      </div>
+      <div className={cardClass}>
+        <span className="text-gray-500 text-sm">Total Revenue</span>
+        <span className={`${valueClass} text-emerald-600`}>₹{totalRevenue.toLocaleString()}</span>
+      </div>
+      <div className={cardClass}>
+        <span className="text-gray-500 text-sm">High Urgency Items</span>
+        <span className={`${valueClass} ${highUrgencyCount > 0 ? 'text-red-600' : 'text-green-600'}`}>
+          {highUrgencyCount} <span className="text-sm font-normal">items</span>
+        </span>
       </div>
     </div>
   );
