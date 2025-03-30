@@ -4,7 +4,7 @@ import { getShopifyProducts, getLowStockProducts, getOutOfStockProducts, getInve
 
 const Inventory = () => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterOption, setFilterOption] = useState('Low Stock');
+  const [filterOption, setFilterOption] = useState('All Product');
   const [products, setProducts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -169,7 +169,7 @@ const Inventory = () => {
 
   const toggleFilter = () => {
     // Cycle through filter options
-    const filters = ['Low Stock', 'Out of Stock', 'All Products'];
+    const filters = ['All Products', 'Low Stock', 'Out of Stock'];
     const currentIndex = filters.indexOf(filterOption);
     const nextIndex = (currentIndex + 1) % filters.length;
     setFilterOption(filters[nextIndex]);

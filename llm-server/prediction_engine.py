@@ -43,8 +43,8 @@ class PredictionEngine:
                 return self._generate_fallback_response()
             
             # Configure the Gemini API
-            genai.configure(api_key=self.gemini_api_key)
-            model = genai.GenerativeModel('gemini-pro')
+            genai.Client(api_key=self.gemini_api_key)
+            model = client
             
             # Create simplified data to avoid token limits
             products = inventory_data.get('products', [])[:15]  # Limit to first 15 products

@@ -16,6 +16,9 @@ const Home = () => {
   const [connectionStatus, setConnectionStatus] = useState({ backend: false, llmServer: false });
   const [error, setError] = useState(null);
   
+console.log(connectionStatus);
+
+
   useEffect(() => {
     // Check connection to backend and LLM server
     const checkConnections = async () => {
@@ -57,21 +60,24 @@ const Home = () => {
         return;
       }
       
+      console.log('Dashboard data received:', data); // Add logging to inspect the response
+      
       setDashboardData(prevState => ({
         ...prevState,
-        totalProducts: data.totalProducts || 0,
-        lowStockItems: data.lowStockItems || 0,
-        predictedOutOfStock: data.predictedOutOfStock || 0,
+        totalProducts: data.data.totalProducts || 0,
+        lowStockItems: data.data.lowStockCount || 0,
+        OutOfStock: data.data.outOfStockCount || 0,
       }));
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
-      // Don't set error state here as we'll try to fetch other data
+      setError(`Failed to fetch dashboard data: ${err.message || 'Unknown error'}`);
     }
   };
   
   const fetchInventoryTrends = async () => {
     try {
       const analytics = await getInventoryAnalytics();
+      console.log('Inventory analytics received:', analytics); // Add logging
       
       if (analytics && analytics.inventoryHistory) {
         // Transform inventory history data for the chart
@@ -80,10 +86,14 @@ const Home = () => {
           stock: item.totalStock
         }));
         
+        console.log('Formatted trend data:', trendData); // Log the transformed data
+        
         setDashboardData(prevState => ({
           ...prevState,
           inventoryTrends: trendData
         }));
+      } else {
+        console.warn('No inventory history data available');
       }
     } catch (err) {
       console.error('Error fetching inventory trends:', err);
@@ -213,8 +223,8 @@ const Home = () => {
             <p className="text-2xl font-bold text-yellow-600">{dashboardData.lowStockItems}</p>
           </div>
           <div className="p-3 bg-red-50 border border-red-100 rounded-md text-center">
-            <p className="text-sm text-gray-600">Predicted Out-of-Stock in 7 Days</p>
-            <p className="text-2xl font-bold text-red-600">{dashboardData.predictedOutOfStock}</p>
+            <p className="text-sm text-gray-600">Out-of-Stock</p>
+            <p className="text-2xl font-bold text-red-600">{dashboardData.OutOfStock}</p>
           </div>
         </div>
       </div>
