@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getRestockRecommendations, runInventorySimulations, getShopifyProducts, testConnections } from '../utils/api';
+import { getRestockRecommendations, runInventorySimulations, getShopifyProducts, testConnections, generateGeminiReport } from '../utils/api';
 
 const RestockPredictions = () => {
   const [recommendations, setRecommendations] = useState([]);
@@ -9,6 +9,7 @@ const RestockPredictions = () => {
   const [simulationStatus, setSimulationStatus] = useState('idle'); // 'idle', 'running', 'completed', 'failed'
   const [connectionStatus, setConnectionStatus] = useState({ backend: false, llmServer: false });
   const [products, setProducts] = useState([]);
+  const [reportStatus, setReportStatus] = useState('idle'); // 'idle', 'generating', 'success', 'failed'
   
   useEffect(() => {
     checkConnections();
@@ -188,6 +189,65 @@ const RestockPredictions = () => {
     }
   };
 
+  // New function to generate and download reports using Gemini AI
+  const generateReport = async () => {
+    if (!connectionStatus.llmServer) {
+      setError('Cannot generate report: LLM server is not connected');
+      return;
+    }
+    
+    try {
+      setReportStatus('generating');
+      setError(null);
+      
+      // Format the data for the report
+      const reportData = recommendations.map(item => ({
+        product: item.name,
+        totalQuantitySold: item.details.totalSold || 0,
+        grossRevenue: item.details.revenue || 0,
+        predictedSalesNextWeek: item.details.predictedSales || 0,
+        restockQuantity: item.details.recommendedOrderQuantity || 0,
+        currentStock: item.stock || 0,
+        category: item.details.category || 'General'
+      }));
+      
+      // Call the API to generate the report with Gemini
+      const response = await generateGeminiReport(reportData);
+      
+      if (response && response.success && response.reportContent) {
+        // Create a Blob containing the report content
+        const blob = new Blob([response.reportContent], { type: 'text/markdown' });
+        
+        // Create a URL for the blob
+        const url = window.URL.createObjectURL(blob);
+        
+        // Create a temporary anchor to trigger the download
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = `inventory-report-${new Date().toISOString().split('T')[0]}.md`;
+        
+        // Append to the document and trigger the download
+        document.body.appendChild(a);
+        a.click();
+        
+        // Clean up
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        setReportStatus('success');
+        setTimeout(() => setReportStatus('idle'), 3000); // Reset status after 3 seconds
+      } else {
+        setReportStatus('failed');
+        setError('Report generation failed: No content returned');
+      }
+    } catch (err) {
+      console.error('Error generating report:', err);
+      setReportStatus('failed');
+      setError('Failed to generate report. Please try again.');
+    }
+  };
+
   // Loading state
   if (isLoading) {
     return (
@@ -247,6 +307,31 @@ const RestockPredictions = () => {
           >
             {simulationStatus === 'running' ? 'Running Simulation...' : 'Run New Simulation'}
           </button>
+
+          <button
+            onClick={generateReport}
+            disabled={reportStatus === 'generating' || !connectionStatus.llmServer || recommendations.length === 0}
+            className={`px-4 py-2 rounded-md ${
+              reportStatus === 'generating' || !connectionStatus.llmServer || recommendations.length === 0
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-green-600 text-white hover:bg-green-700'
+            } transition-colors flex items-center`}
+          >
+            {reportStatus === 'generating' ? (
+              <>
+                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Generating...
+              </>
+            ) : (
+              <>
+                <span role="img" aria-label="document" className="mr-1">📄</span>
+                Generate Report
+              </>
+            )}
+          </button>
           
           <Link
             to='/inventory'
@@ -262,6 +347,14 @@ const RestockPredictions = () => {
         <div className="mb-4 p-3 bg-green-100 border border-green-200 text-green-700 rounded-md">
           <p className="font-medium">Simulation completed successfully!</p>
           <p className="text-sm">Recommendations have been updated based on simulation results.</p>
+        </div>
+      )}
+
+      {/* Report generation status */}
+      {reportStatus === 'success' && (
+        <div className="mb-4 p-3 bg-green-100 border border-green-200 text-green-700 rounded-md">
+          <p className="font-medium">Report generated successfully!</p>
+          <p className="text-sm">Your inventory report has been downloaded.</p>
         </div>
       )}
 
@@ -353,12 +446,18 @@ const RestockPredictions = () => {
         )}
       </div>
 
+      {/* About section with enhanced information about AI recommendations and reports */}
       <div className="mt-6 p-4 bg-blue-50 border border-blue-100 rounded-md">
-        <h3 className="text-sm font-semibold text-blue-800 mb-2">ℹ️ About AI Recommendations</h3>
-        <p className="text-xs text-blue-600">
-          These recommendations are generated by our AI system based on historical inventory data, sales patterns, and current stock levels. 
-          The system predicts future demand and suggests optimal restock quantities and timing to minimize stockouts while optimizing inventory costs.
-        </p>
+        <h3 className="text-sm font-semibold text-blue-800 mb-2">ℹ️ About AI Recommendations & Reports</h3>
+        <div className="text-xs text-blue-600 space-y-2">
+          <p>
+            These recommendations are generated by our AI system based on historical inventory data, sales patterns, and current stock levels. 
+            The system predicts future demand and suggests optimal restock quantities and timing to minimize stockouts while optimizing inventory costs.
+          </p>
+          <p>
+            <strong>Generate Report:</strong> Create a comprehensive inventory report powered by Gemini AI that includes products sold, gross revenue, predicted sales, and restock recommendations in a well-formatted Markdown document.
+          </p>
+        </div>
       </div>
     </div>
   );

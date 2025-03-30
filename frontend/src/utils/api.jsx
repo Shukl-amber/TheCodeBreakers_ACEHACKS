@@ -105,6 +105,14 @@ export const getAIInsights = () => {
   return fetchApi(`${LLM_SERVER_URL}/api/insights/inventory`);
 };
 
+// Generate report using Gemini AI
+export const generateGeminiReport = (data) => {
+  return fetchApi(`${LLM_SERVER_URL}/api/reports/generate`, {
+    method: 'POST',
+    body: JSON.stringify({ data }),
+  });
+};
+
 // Test connection to both servers
 export const testConnections = async () => {
   try {
@@ -139,5 +147,6 @@ export default {
   getRestockRecommendations,
   runInventorySimulations,
   getAIInsights,
+  generateGeminiReport,
   testConnections,
 };

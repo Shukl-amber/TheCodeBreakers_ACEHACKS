@@ -6,6 +6,7 @@ import logging
 from dotenv import load_dotenv
 from prediction_engine import PredictionEngine
 from shopify_data_connector import ShopifyDataConnector
+from google import genai
 
 # Load environment variables
 load_dotenv()
@@ -28,6 +29,9 @@ CORS(app)  # Enable CORS for all routes
 # Initialize prediction engine and data connector
 engine = PredictionEngine()
 connector = ShopifyDataConnector()
+
+# Initialize Gemini client
+gemini_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -295,6 +299,63 @@ def simulate_inventory():
         return jsonify({
             'error': str(e),
             'success': False
+        }), 500
+
+@app.route('/api/reports/generate', methods=['POST'])
+def generate_report():
+    """Generate a formatted report using Gemini AI"""
+    try:
+        # Get data from request
+        request_data = request.json
+        
+        if not request_data or 'data' not in request_data:
+            return jsonify({
+                'success': False,
+                'error': 'No data provided in request body'
+            }), 400
+        
+        logger.info("Generating inventory report with Gemini")
+        
+        # Format the data for Gemini
+        data = request_data['data']
+        content_str = json.dumps(data, indent=2)
+        
+        # Generate report with Gemini
+        prompt = f"""
+        Generate a well formatted sales data report that contains a summary of the provided calculated data
+        such as profit or percentages, number of products sold, number of products left in inventory etc.
+
+        Tabulate the result in a well formatted table with the following headings {{Product, Total Quantity Sold, Gross Revenue, Predicted Sales for Next Week, Number of items to Restock}}.
+
+        Ensure to use Rupees as the currency and prepend the rupee sign where every necessary
+        Only provide the Report in your response
+        """
+        
+        response = gemini_client.models.generate_content(
+            model="gemini-2.0-flash", 
+            contents=prompt + content_str
+        )
+        
+        # Extract the report content
+        report_content = response.text
+        
+        # Save report locally for debugging purposes
+        with open('last_report.md', 'w', encoding='utf-8') as f:
+            f.write(report_content)
+        
+        logger.info("Successfully generated inventory report with Gemini")
+        
+        return jsonify({
+            'success': True,
+            'reportContent': report_content
+        })
+        
+    except Exception as e:
+        logger.exception(f"Error generating report: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'message': 'Failed to generate report'
         }), 500
 
 if __name__ == '__main__':
