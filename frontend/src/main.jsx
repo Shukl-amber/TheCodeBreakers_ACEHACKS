@@ -7,7 +7,7 @@ import Home from './pages/Home.jsx'
 import { createBrowserRouter, createRoutesFromElements, RouterProvider , Route} from 'react-router-dom'
 import ConnectShopify from './pages/ConnectShopify.jsx'
 import Inventory from './pages/Inventory.jsx'
-import RestockPredictions from './components/RestockPredicitons.jsx'
+import RestockPredictions from './components/RestockPredictions.jsx'
 import Landing from './pages/Landing.jsx'
 
 const router = createBrowserRouter(

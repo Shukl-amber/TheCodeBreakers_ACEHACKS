@@ -1,23 +1,104 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { connectShopify, syncShopifyData, testConnections } from '../utils/api';
 
 const ConnectShopify = () => {
   const [storeUrl, setStoreUrl] = useState('');
-  const [storeApiToken, setApiToken] = useState('');
+  const [storeApiKey, setApiKey] = useState('');
   const [storeApiSecret, setApiSecret] = useState('');
+  const [accessToken, setAccessToken] = useState('');
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [connectionError, setConnectionError] = useState(null);
+  const [connectionSuccess, setConnectionSuccess] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  
+  const navigate = useNavigate();
 
-  const handleConnect = (e) => {
+  // Check server connections on component mount
+  React.useEffect(() => {
+    const checkServers = async () => {
+      try {
+        const connections = await testConnections();
+        if (!connections.backend) {
+          setConnectionError("Cannot connect to the backend server. Please ensure it is running.");
+        }
+      } catch (err) {
+        setConnectionError("Failed to check server status. Please try again.");
+      }
+    };
+    
+    checkServers();
+  }, []);
+
+  const handleConnect = async (e) => {
     e.preventDefault();
-    // Handle connection logic here
-    console.log('Connecting to store:', storeUrl);
-    // In a real implementation, you would redirect to Shopify OAuth flow
+    setIsConnecting(true);
+    setConnectionError(null);
+    
+    try {
+      // Validate inputs
+      if (!storeUrl || !storeApiKey || !storeApiSecret || !accessToken) {
+        setConnectionError("All fields are required to connect your store.");
+        setIsConnecting(false);
+        return;
+      }
+      
+      // Format store URL if needed
+      let formattedStoreUrl = storeUrl;
+      if (!formattedStoreUrl.includes('.myshopify.com') && !formattedStoreUrl.startsWith('http')) {
+        formattedStoreUrl = `${formattedStoreUrl}.myshopify.com`;
+      }
+      
+      // Prepare credentials for the API call
+      const credentials = {
+        shopName: formattedStoreUrl,
+        apiKey: storeApiKey,
+        apiSecret: storeApiSecret,
+        accessToken: accessToken
+      };
+      
+      // Call the API to connect to Shopify
+      const response = await connectShopify(credentials);
+      
+      if (response.success) {
+        setConnectionSuccess(true);
+        
+        // Start syncing data
+        await syncData();
+        
+        // Redirect to home page after successful connection and sync
+        setTimeout(() => {
+          navigate('/home');
+        }, 2000);
+      } else {
+        setConnectionError(response.error || "Failed to connect to Shopify. Please check your credentials.");
+      }
+    } catch (err) {
+      console.error("Connection error:", err);
+      setConnectionError("An error occurred while connecting to Shopify. Please try again.");
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+  
+  const syncData = async () => {
+    setIsSyncing(true);
+    try {
+      await syncShopifyData();
+      // Success is handled by the redirect in handleConnect
+    } catch (err) {
+      console.error("Sync error:", err);
+      setConnectionError("Connected successfully, but failed to sync data. You can try syncing later.");
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-50">
       <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-md">
         <div className="flex items-center justify-center">
-          <h1 className="text-2xl font-bold text-center text-black">LOGIN / CONNECT STORE</h1>
+          <h1 className="text-2xl font-bold text-center text-black">CONNECT YOUR SHOPIFY STORE</h1>
         </div>
         
         <div className="flex items-center justify-center py-4">
@@ -32,6 +113,22 @@ const ConnectShopify = () => {
           Connect your Shopify store to manage inventory.
         </div>
         
+        {/* Error message */}
+        {connectionError && (
+          <div className="p-3 bg-red-100 border border-red-200 rounded-md">
+            <p className="text-sm text-red-700">{connectionError}</p>
+          </div>
+        )}
+        
+        {/* Success message */}
+        {connectionSuccess && (
+          <div className="p-3 bg-green-100 border border-green-200 rounded-md">
+            <p className="text-sm text-green-700">
+              {isSyncing ? "Successfully connected! Syncing data..." : "Successfully connected to your Shopify store!"}
+            </p>
+          </div>
+        )}
+        
         <form onSubmit={handleConnect} className="space-y-4">
           <div className="space-y-2">
             <div className="relative">
@@ -39,34 +136,65 @@ const ConnectShopify = () => {
                 type="text"
                 value={storeUrl}
                 onChange={(e) => setStoreUrl(e.target.value)}
-                placeholder="Store URL"
+                placeholder="Store URL (e.g., your-store.myshopify.com)"
                 className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 mb-5"
                 required
+                disabled={isConnecting || connectionSuccess}
               />
               <input
                 type="text"
-                value={storeApiToken}
-                onChange={(e) => setApiToken(e.target.value)}
-                placeholder="Store API key"
+                value={storeApiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="Shopify API key"
                 className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 mb-5"
                 required
+                disabled={isConnecting || connectionSuccess}
               />
               <input
-                type="text"
+                type="password"
                 value={storeApiSecret}
                 onChange={(e) => setApiSecret(e.target.value)}
-                placeholder="Store API secret  "
+                placeholder="Shopify API secret"
+                className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 mb-5"
+                required
+                disabled={isConnecting || connectionSuccess}
+              />
+              <input
+                type="password"
+                value={accessToken}
+                onChange={(e) => setAccessToken(e.target.value)}
+                placeholder="Shopify Access Token"
                 className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 required
+                disabled={isConnecting || connectionSuccess}
               />
             </div>
           </div>
-            <Link to="/home" class="w-full flex justify-center px-6 py-4 mt-3 font-semibold text-white transition-all duration-200 bg-blue-600 rounded-md sm:mt-16 hover:bg-blue-700 focus:bg-blue-700">
-                    Register Store
-                    <svg class="w-6 h-6 ml-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 9l3 3m0 0l-3 3m3-3H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-            </Link>
+          
+          <button
+            type="submit"
+            disabled={isConnecting || connectionSuccess}
+            className={`w-full flex justify-center px-6 py-4 mt-3 font-semibold text-white transition-all duration-200 rounded-md sm:mt-8 ${
+              isConnecting || connectionSuccess 
+                ? 'bg-gray-400 cursor-not-allowed' 
+                : 'bg-blue-600 hover:bg-blue-700 focus:bg-blue-700'
+            }`}
+          >
+            {isConnecting ? 'Connecting...' : connectionSuccess ? 'Connected!' : 'Connect Store'}
+            {!isConnecting && !connectionSuccess && (
+              <svg className="w-6 h-6 ml-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M13 9l3 3m0 0l-3 3m3-3H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            )}
+          </button>
+          
+          {!connectionSuccess && (
+            <div className="text-center mt-4">
+              <Link to="/home" className="text-sm text-blue-600 hover:underline">
+                Skip for now
+              </Link>
+            </div>
+          )}
         </form>
       </div>
     </div>

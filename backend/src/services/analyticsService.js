@@ -94,6 +94,118 @@ export const updateInventoryAnalytics = async () => {
 };
 
 /**
+ * Get inventory analytics data for frontend display
+ * @returns {Object} Formatted inventory analytics data for dashboard and charts
+ */
+export const getInventoryAnalytics = async () => {
+  logger.info('Fetching inventory analytics data');
+  
+  try {
+    // Get all products and their analytics
+    const products = await Product.find();
+    const analytics = await InventoryAnalytics.find();
+    
+    // Calculate total inventory levels over time (for trends)
+    const inventoryHistoryMap = new Map();
+    
+    // Process each analytics entry to build inventory history
+    analytics.forEach(item => {
+      if (item.historicalQuantities && item.historicalQuantities.length > 0) {
+        item.historicalQuantities.forEach(record => {
+          const dateKey = new Date(record.date).toISOString().split('T')[0]; // YYYY-MM-DD
+          const currentTotal = inventoryHistoryMap.get(dateKey) || 0;
+          inventoryHistoryMap.set(dateKey, currentTotal + record.quantity);
+        });
+      }
+    });
+    
+    // Convert to array and sort by date
+    const inventoryHistory = Array.from(inventoryHistoryMap.entries())
+      .map(([date, totalStock]) => ({ date, totalStock }))
+      .sort((a, b) => new Date(a.date) - new Date(b.date))
+      .slice(-30); // Last 30 days
+    
+    // Calculate product trends for individual products
+    const productTrends = products.map(product => {
+      // Find analytics for this product's variants
+      const productAnalytics = analytics.filter(a => a.shopifyProductId === product.shopifyId);
+      
+      // Calculate current stock
+      const currentStock = product.variants.reduce((total, variant) => {
+        return total + (variant.inventoryQuantity || 0);
+      }, 0);
+      
+      // Get historical data if available
+      let trendDirection = 'stable';
+      let percentChange = 0;
+      
+      if (productAnalytics.length > 0) {
+        // Use sales velocity to determine trend
+        const avgDailySales = productAnalytics.reduce((sum, item) => {
+          return sum + (item.salesVelocity?.daily || 0);
+        }, 0);
+        
+        if (avgDailySales > 0) {
+          // If we're selling product, trend is down
+          trendDirection = 'down';
+          // Calculate percent change based on 7 days of sales vs current stock
+          const weekSales = avgDailySales * 7;
+          percentChange = Math.min(Math.round((weekSales / currentStock) * 100), 100);
+        }
+      }
+      
+      return {
+        productId: product.shopifyId,
+        name: product.title,
+        currentStock,
+        trendDirection,
+        percentChange
+      };
+    });
+    
+    // Get count of low stock items
+    const lowStockCount = analytics.filter(item => item.stockStatus === 'low').length;
+    
+    // Calculate predicted out of stock in next 7 days
+    const predictedOutOfStock = analytics.filter(item => {
+      if (!item.salesVelocity || !item.salesVelocity.daily) return false;
+      
+      // Find the product and variant
+      const product = products.find(p => p.shopifyId === item.shopifyProductId);
+      if (!product) return false;
+      
+      const variant = product.variants.find(v => v.shopifyVariantId === item.variantId);
+      if (!variant) return false;
+      
+      // Calculate days until stockout
+      const currentStock = variant.inventoryQuantity || 0;
+      const dailySales = item.salesVelocity.daily;
+      
+      // If daily sales is zero, won't go out of stock
+      if (dailySales <= 0) return false;
+      
+      const daysUntilStockout = currentStock / dailySales;
+      return daysUntilStockout <= 7; // Will be out of stock within 7 days
+    }).length;
+    
+    return {
+      success: true,
+      totalProducts: products.length,
+      lowStockItems: lowStockCount,
+      predictedOutOfStock: predictedOutOfStock,
+      inventoryHistory,
+      productTrends
+    };
+  } catch (error) {
+    logger.error('Error fetching inventory analytics', error);
+    return { 
+      success: false, 
+      error: error.message 
+    };
+  }
+};
+
+/**
  * Prepare inventory data for external AI processing
  * @returns {Array} Data formatted for AI processing
  */
@@ -219,5 +331,6 @@ export default {
   calculateBasicSalesVelocity,
   updateInventoryAnalytics,
   prepareInventoryDataForAI,
-  saveAIRecommendations
+  saveAIRecommendations,
+  getInventoryAnalytics
 };

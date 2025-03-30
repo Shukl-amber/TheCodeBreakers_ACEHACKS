@@ -37,92 +37,73 @@ def health_check():
         'version': '1.0.0'
     })
 
-@app.route('/api/predictions/restock', methods=['GET', 'POST'])
-def get_restock_recommendations():
-    """Generate restock recommendations for inventory items"""
+@app.route('/api/predictions/restock', methods=['GET'])
+def get_restock_predictions():
+    """Generate AI-powered restock recommendations"""
     try:
-        if request.method == 'POST':
-            # Get data from request
-            data = request.json
-            
-            if not data:
-                logger.error("No data received in request")
-                return jsonify({
-                    'error': 'No data received',
-                    'success': False
-                }), 400
-                
-            logger.info(f"Received request for restock predictions with {len(data)} items")
-            
-            # Process through prediction engine
-            predictions = engine.generate_restock_predictions(data)
-        else:
-            # GET method fetches data from backend API and generates predictions
-            logger.info("Fetching inventory data from backend API and generating predictions")
-            predictions = engine.generate_restock_predictions()
+        logger.info("Generating restock recommendations with Gemini")
         
-        logger.info(f"Generated {len(predictions)} restock predictions")
+        # Get inventory and sales data from the connector
+        inventory_data = connector.get_inventory_data()
+        sales_data = connector.get_sales_data()
+        
+        # Check if we got data successfully
+        if 'error' in inventory_data or 'error' in sales_data:
+            # If backend data fetch failed, use mock data
+            logger.warning("Using mock data for restock recommendations due to backend connectivity issues")
+            mock_data = connector.get_mock_data()
+            inventory_data = mock_data["inventory"]
+            sales_data = mock_data["orders"]
+        
+        # Generate insights using the prediction engine
+        insights = engine.analyze_inventory_with_gemini(inventory_data, sales_data)
+        
+        # Extract restock recommendations from insights
+        restock_recommendations = insights.get('restock_recommendations', [])
+        low_stock_alert = insights.get('lowStockItems', [])
+        
+        # Create summary from insights
+        restock_summary = insights.get('inventoryHealth', 'No summary available')
+        
+        logger.info(f"Generated {len(restock_recommendations)} restock recommendations")
         
         return jsonify({
             'success': True,
-            'predictions': predictions
+            'predictions': restock_recommendations,
+            'low_stock_alert': low_stock_alert,
+            'restock_summary': restock_summary
         })
         
     except Exception as e:
-        logger.exception("Error in restock predictions")
+        logger.exception(f"Error generating restock predictions: {str(e)}")
         return jsonify({
-            'error': str(e),
-            'success': False
+            'success': False,
+            'message': f"Error generating predictions: {str(e)}"
         }), 500
 
-@app.route('/api/predictions/simulate', methods=['GET', 'POST'])
-def run_simulations():
-    """Run inventory simulations with different scenarios"""
-    try:
-        if request.method == 'POST':
-            # Get data from request
-            data = request.json
-            
-            if not data or 'items' not in data:
-                logger.error("Invalid data received for simulations")
-                return jsonify({
-                    'error': 'Invalid data format',
-                    'success': False
-                }), 400
-                
-            items = data['items']
-            scenarios = data.get('scenarios', [])
-        else:
-            # GET method fetches data from backend API
-            logger.info("Fetching inventory data from backend API for simulations")
-            items = connector.get_inventory_for_predictions()
-            scenarios = []  # Will use default scenarios
-        
-        logger.info(f"Running simulations on {len(items)} items with {len(scenarios)} scenarios")
-        
-        # Run simulations through prediction engine
-        results = engine.run_inventory_simulations(items, scenarios)
-        
-        return jsonify({
-            'success': True,
-            'results': results
-        })
-        
-    except Exception as e:
-        logger.exception("Error in inventory simulations")
-        return jsonify({
-            'error': str(e),
-            'success': False
-        }), 500
-
+# Simplified inventory insights endpoint that uses any available data or mock data
 @app.route('/api/insights/inventory', methods=['GET'])
 def get_inventory_insights():
-    """Generate AI-powered inventory insights"""
+    """Generate AI-powered inventory insights using any available data or mock data"""
     try:
         logger.info("Generating inventory insights with Gemini")
         
+        # First try to get data from backend
+        inventory_data = connector.get_inventory_data()
+        order_data = connector.get_order_data()
+        
+        # Check if we got data successfully
+        if 'error' in inventory_data or 'error' in order_data:
+            # If backend data fetch failed, use mock data
+            logger.warning("Using mock data for insights due to backend connectivity issues")
+            mock_data = connector.get_mock_data()
+            inventory_data = mock_data["inventory"]
+            order_data = mock_data["orders"]
+        
+        logger.info("Successfully prepared data for Gemini analysis")
+        
         # Generate insights using Gemini
-        insights = engine.generate_insights_with_gemini()
+        insights = engine.analyze_inventory_with_gemini(inventory_data, order_data)
         
         return jsonify({
             'success': True,
@@ -136,34 +117,157 @@ def get_inventory_insights():
             'success': False
         }), 500
 
-@app.route('/api/connector/test', methods=['GET'])
-def test_connector():
-    """Test connection to backend API"""
+@app.route('/api/insights/inventory-basic', methods=['POST'])
+def get_basic_inventory_insights():
+    """Accept inventory data directly in request body and return insights"""
     try:
-        logger.info("Testing connection to backend API")
+        # Get data from request
+        data = request.json
         
-        # Try to fetch some data
-        inventory_data = connector.get_inventory_data()
-        
-        if 'error' in inventory_data:
+        if not data:
             return jsonify({
                 'success': False,
-                'error': inventory_data['error'],
-                'message': 'Failed to connect to backend API'
-            }), 500
+                'error': 'No data provided in request body'
+            }), 400
+            
+        inventory_data = data.get('inventory', {})
+        order_data = data.get('orders', {})
+        
+        logger.info(f"Received direct inventory data with {len(inventory_data.get('products', []))} products")
+        
+        # Generate insights using Gemini
+        insights = engine.analyze_inventory_with_gemini(inventory_data, order_data)
         
         return jsonify({
             'success': True,
-            'message': 'Successfully connected to backend API',
-            'productCount': len(inventory_data.get('products', []))
+            'insights': insights
         })
         
     except Exception as e:
-        logger.exception("Error testing backend API connection")
+        logger.exception("Error generating inventory insights from direct data")
         return jsonify({
-            'success': False,
             'error': str(e),
-            'message': 'Exception occurred while testing connection'
+            'success': False
+        }), 500
+
+# New routes to match frontend expectations - /api/prediction/ endpoints
+@app.route('/api/prediction/inventory', methods=['GET'])
+def get_inventory_prediction():
+    """Generate AI-powered inventory predictions and insights"""
+    try:
+        logger.info("Generating inventory predictions with Gemini via /api/prediction/inventory")
+        
+        # Get data from backend
+        inventory_data = connector.get_inventory_data()
+        order_data = connector.get_order_data()
+        
+        # Check if we got data successfully
+        if 'error' in inventory_data or 'error' in order_data:
+            # If backend data fetch failed, use mock data
+            logger.warning("Using mock data for predictions due to backend connectivity issues")
+            mock_data = connector.get_mock_data()
+            inventory_data = mock_data["inventory"]
+            order_data = mock_data["orders"]
+        
+        # Generate insights using Gemini
+        insights = engine.analyze_inventory_with_gemini(inventory_data, order_data)
+        
+        return jsonify({
+            'success': True,
+            'predictions': insights
+        })
+        
+    except Exception as e:
+        logger.exception("Error generating inventory predictions")
+        return jsonify({
+            'error': str(e),
+            'success': False
+        }), 500
+
+@app.route('/api/prediction/analyze', methods=['POST'])
+def analyze_data():
+    """Endpoint for analyzing custom data with predictions"""
+    try:
+        # Get data from request
+        data = request.json
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No data provided in request body'
+            }), 400
+            
+        inventory_data = data.get('inventory', {})
+        order_data = data.get('orders', {})
+        
+        logger.info(f"Received data for analysis via /api/prediction/analyze")
+        
+        # Generate insights using Gemini
+        insights = engine.analyze_inventory_with_gemini(inventory_data, order_data)
+        
+        return jsonify({
+            'success': True,
+            'predictions': insights
+        })
+        
+    except Exception as e:
+        logger.exception("Error analyzing data for predictions")
+        return jsonify({
+            'error': str(e),
+            'success': False
+        }), 500
+
+@app.route('/api/predictions/simulate', methods=['POST'])
+def simulate_inventory():
+    """Endpoint for simulating inventory scenarios"""
+    try:
+        # Get parameters from request
+        params = request.json
+        
+        if not params:
+            return jsonify({
+                'success': False,
+                'error': 'No simulation parameters provided in request body'
+            }), 400
+        
+        logger.info(f"Received request for inventory simulation")
+        
+        # Get inventory and order data
+        inventory_data = connector.get_inventory_data()
+        order_data = connector.get_order_data()
+        
+        # Check if we got data successfully
+        if 'error' in inventory_data or 'error' in order_data:
+            # If backend data fetch failed, use mock data
+            logger.warning("Using mock data for simulation due to backend connectivity issues")
+            mock_data = connector.get_mock_data()
+            inventory_data = mock_data["inventory"]
+            order_data = mock_data["orders"]
+        
+        # Combine with simulation parameters
+        simulation_data = {
+            'inventory': inventory_data,
+            'orders': order_data,
+            'parameters': params
+        }
+        
+        # Generate simulation results using Gemini
+        insights = engine.analyze_inventory_with_gemini(
+            simulation_data['inventory'], 
+            simulation_data['orders'],
+            simulation_context=f"Simulate inventory with these parameters: {json.dumps(params)}"
+        )
+        
+        return jsonify({
+            'success': True,
+            'simulation_results': insights
+        })
+        
+    except Exception as e:
+        logger.exception("Error simulating inventory scenarios")
+        return jsonify({
+            'error': str(e),
+            'success': False
         }), 500
 
 if __name__ == '__main__':
